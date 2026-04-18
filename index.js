@@ -256,7 +256,16 @@ async function startBot() {
         }
     })
 }
+const express = require("express")
+const app = express()
 
+app.get("/", (req, res) => {
+    res.send("Bot WA aktif 🚀")
+})
+
+app.listen(3000, () => {
+    console.log("🌐 Server jalan di port 3000")
+})
 // =====================
 // RUN BOT
 // =====================
