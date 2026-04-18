@@ -9,6 +9,21 @@ const fs = require("fs")
 const fsPromises = require("fs").promises
 const pino = require("pino")
 const qrcode = require("qrcode-terminal")
+const express = require("express")
+
+// =====================
+// EXPRESS (KEEP ALIVE)
+// =====================
+const app = express()
+
+app.get("/", (req, res) => {
+    res.send("Bot WA aktif 🚀")
+})
+
+const PORT = process.env.PORT || 3000
+app.listen(PORT, () => {
+    console.log("🌐 Server jalan di port", PORT)
+})
 
 // =====================
 // GLOBAL SAFE INIT
@@ -16,6 +31,11 @@ const qrcode = require("qrcode-terminal")
 global.spam = global.spam || {}
 global.gameState = global.gameState || {}
 global.settings = global.settings || { prefix: "." }
+
+// =====================
+// SESSION PATH FIX (PENTING)
+// =====================
+const sessionPath = process.env.SESSION_PATH || "./session"
 
 // =====================
 // UTILS
@@ -41,7 +61,18 @@ global.writeJSON = async (file, data) => {
 }
 
 // =====================
-// SPAM CLEANUP (cegah memory leak)
+// ANTI CRASH
+// =====================
+process.on("uncaughtException", (err) => {
+    console.log("❌ Uncaught Exception:", err)
+})
+
+process.on("unhandledRejection", (err) => {
+    console.log("❌ Unhandled Rejection:", err)
+})
+
+// =====================
+// SPAM CLEANUP
 // =====================
 setInterval(() => {
     const now = Date.now()
@@ -71,9 +102,6 @@ async function messageHandler(msg) {
         msg.message.videoMessage?.caption ||
         ""
 
-    // FIX UTAMA:
-    // Kalau pesan dari bot sendiri (fromMe), hanya proses kalau ada prefix command
-    // Ini supaya owner bisa pakai bot dari nomor sendiri, tapi tidak loop
     if (isFromMe && !text.startsWith(prefix)) return
 
     const from = msg.key.remoteJid
@@ -83,58 +111,6 @@ async function messageHandler(msg) {
         ? msg.key.participant || ""
         : from
 
-    const type = Object.keys(msg.message || {})[0]
-
-    // =====================
-    // ANTISPAM — hanya di group, hanya untuk bukan owner
-    // =====================
-    if (isGroup && !isFromMe && !text.startsWith(prefix)) {
-
-        const spamTypes = [
-            "conversation",
-            "extendedTextMessage",
-            "imageMessage",
-            "videoMessage",
-            "stickerMessage"
-        ]
-
-        if (!global.spam[sender]) {
-            global.spam[sender] = { count: 0, time: Date.now() }
-        }
-
-        const now = Date.now()
-
-        if (now - global.spam[sender].time > 5000) {
-            global.spam[sender] = { count: 0, time: now }
-        }
-
-        if (spamTypes.includes(type)) {
-            global.spam[sender].count++
-            global.spam[sender].time = now
-        }
-
-        if (global.spam[sender].count >= 5) {
-            global.spam[sender].count = 0
-
-            let db = global.readJSON("./warn.json")
-
-            if (!db[from]) db[from] = {}
-            if (!db[from][sender]) db[from][sender] = 0
-
-            db[from][sender]++
-
-            await global.writeJSON("./warn.json", db)
-
-            await sock.sendMessage(from, {
-                text: `⚠️ @${sender.split("@")[0]} jangan spam`,
-                mentions: [sender]
-            })
-        }
-    }
-
-    // =====================
-    // COMMAND CHECK
-    // =====================
     if (!text.startsWith(prefix)) return
 
     const args = text.slice(prefix.length).trim().split(/ +/)
@@ -142,56 +118,48 @@ async function messageHandler(msg) {
 
     if (!command) return
 
-    // Validasi nama command — cegah path traversal
     if (!/^[a-zA-Z0-9_-]+$/.test(command)) {
-        return sock.sendMessage(from, {
-            text: "❌ Command tidak valid"
-        })
+        return sock.sendMessage(from, { text: "❌ Command tidak valid" })
     }
 
-    // =====================
-    // LOAD COMMAND
-    // =====================
     try {
         const cmdPath = `./commands/${command}.js`
 
         if (!fs.existsSync(cmdPath)) {
-            return sock.sendMessage(from, {
-                text: "❌ Command tidak ditemukan"
-            })
+            return sock.sendMessage(from, { text: "❌ Command tidak ditemukan" })
         }
 
         delete require.cache[require.resolve(cmdPath)]
         const cmd = require(cmdPath)
 
         if (typeof cmd !== "function") {
-            return sock.sendMessage(from, {
-                text: "❌ Format command salah"
-            })
+            return sock.sendMessage(from, { text: "❌ Format command salah" })
         }
 
         await cmd(sock, msg, args)
 
     } catch (err) {
         console.log("❌ COMMAND ERROR:", err)
-        sock.sendMessage(from, {
-            text: "❌ Error saat menjalankan command"
-        })
+        sock.sendMessage(from, { text: "❌ Error saat menjalankan command" })
     }
 }
 
 // =====================
-// RECONNECT COUNTER
+// RECONNECT CONTROL
 // =====================
 let reconnectCount = 0
 const MAX_RECONNECT = 10
+let isRestarting = false
 
 // =====================
 // START BOT
 // =====================
 async function startBot() {
 
-    const { state, saveCreds } = await useMultiFileAuthState("./session")
+    if (isRestarting) return
+    isRestarting = true
+
+    const { state, saveCreds } = await useMultiFileAuthState(sessionPath)
     const { version } = await fetchLatestBaileysVersion()
 
     const sock = makeWASocket({
@@ -203,9 +171,6 @@ async function startBot() {
 
     console.log("🔥 BOT STARTING...")
 
-    // =====================
-    // CONNECTION UPDATE
-    // =====================
     sock.ev.on("connection.update", (update) => {
         const { connection, lastDisconnect, qr } = update
 
@@ -217,55 +182,45 @@ async function startBot() {
         if (connection === "open") {
             console.log("✅ BOT CONNECTED")
             reconnectCount = 0
+            isRestarting = false
         }
 
         if (connection === "close") {
             const reason = lastDisconnect?.error?.output?.statusCode
 
             if (reason === DisconnectReason.loggedOut) {
-                console.log("❌ Logged out. Hapus folder session lalu jalankan ulang.")
-                return
+                console.log("❌ Logged out. session dihapus.")
+                return process.exit(1)
             }
 
             if (reconnectCount >= MAX_RECONNECT) {
-                console.log(`❌ Gagal reconnect setelah ${MAX_RECONNECT}x. Hentikan bot.`)
-                process.exit(1)
+                console.log("❌ Max reconnect tercapai")
+                return process.exit(1)
             }
 
             reconnectCount++
-            const delay = Math.min(5000 * reconnectCount, 30000)
-            console.log(`♻ Reconnecting... (${reconnectCount}/${MAX_RECONNECT}) dalam ${delay / 1000}s`)
-            setTimeout(() => startBot(), delay)
+
+            const delayTime = Math.min(5000 * reconnectCount, 30000)
+
+            console.log(`♻ Reconnect ${reconnectCount}/${MAX_RECONNECT}`)
+
+            setTimeout(() => {
+                isRestarting = false
+                startBot()
+            }, delayTime)
         }
     })
 
     sock.ev.on("creds.update", saveCreds)
 
-    // =====================
-    // MESSAGE EVENT
-    // =====================
     sock.ev.on("messages.upsert", async ({ messages }) => {
-        try {
-            const msg = messages?.[0]
-            if (!msg) return
+        const msg = messages?.[0]
+        if (!msg) return
 
-            await messageHandler.call(sock, msg)
-
-        } catch (err) {
-            console.log("ERROR MESSAGE:", err)
-        }
+        await messageHandler.call(sock, msg)
     })
 }
-const express = require("express")
-const app = express()
 
-app.get("/", (req, res) => {
-    res.send("Bot WA aktif 🚀")
-})
-
-app.listen(3000, () => {
-    console.log("🌐 Server jalan di port 3000")
-})
 // =====================
 // RUN BOT
 // =====================
