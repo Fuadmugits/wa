@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Panel Bot</title>
+
+<link href="https://fonts.googleapis.com/css2?family=Poppins&display=swap" rel="stylesheet">
+
+<style>
+body {
+    margin: 0;
+    font-family: 'Poppins', sans-serif;
+    background: #0f172a;
+    color: white;
+}
+
+.sidebar {
+    width: 220px;
+    height: 100vh;
+    position: fixed;
+    background: #020617;
+    padding: 20px;
+}
+
+.sidebar h2 {
+    color: #38bdf8;
+}
+
+.sidebar a {
+    display: block;
+    color: white;
+    text-decoration: none;
+    margin: 15px 0;
+}
+
+.sidebar a:hover {
+    color: #38bdf8;
+}
+
+.main {
+    margin-left: 240px;
+    padding: 30px;
+}
+
+.card {
+    background: #1e293b;
+    padding: 20px;
+    border-radius: 12px;
+    margin-bottom: 20px;
+}
+
+input, button {
+    padding: 10px;
+    border-radius: 8px;
+    border: none;
+    margin-top: 10px;
+}
+
+input {
+    width: 100%;
+}
+
+button {
+    background: #38bdf8;
+    color: black;
+    cursor: pointer;
+}
+
+button:hover {
+    background: #0ea5e9;
+}
+</style>
+</head>
+
+<body>
+
+<div class="sidebar">
+    <h2>🤖 PANEL</h2>
+    <a href="/dashboard">Dashboard</a>
+    <a href="/transaksi">Transaksi</a>
+    <a href="/reseller">Reseller</a>
+</div>
+
+<div class="main">
+
+    <h1>🔥 Dashboard Bot</h1>
+
+    <div class="card">
+        <h3>👑 Add Premium</h3>
+        <form action="/addprem" method="POST">
+            <input type="text" name="number" placeholder="628xxx">
+            <input type="number" name="days" placeholder="Hari">
+            <button>Tambah Premium</button>
+        </form>
+    </div>
+
+    <div class="card">
+        <h3>💰 Sewa Bot</h3>
+        <form action="/addsewa" method="POST">
+            <input type="text" name="group" placeholder="ID Group">
+            <input type="number" name="days" placeholder="Hari">
+            <button>Tambah Sewa</button>
+        </form>
+    </div>
+
+    <div class="card">
+        <h3>💳 Beli Premium (Auto Payment)</h3>
+        <form action="/buy/premium" method="POST">
+            <input type="text" name="number" placeholder="628xxx">
+            <input type="number" name="days" placeholder="7 / 30">
+            <button>Beli Sekarang</button>
+        </form>
+    </div>
+
+</div>
+
+</body>
+</html>
