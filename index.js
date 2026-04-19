@@ -26,6 +26,11 @@ app.listen(PORT, () => {
 })
 
 // =====================
+// WAKTU BOT MULAI — untuk filter pesan lama
+// =====================
+const BOT_START_TIME = Math.floor(Date.now() / 1000) // dalam detik (unix timestamp)
+
+// =====================
 // GLOBAL SAFE INIT
 // =====================
 global.spam = global.spam || {}
@@ -92,6 +97,16 @@ async function messageHandler(msg) {
     if (!msg || !msg.message) return
     if (msg.key?.remoteJid === "status@broadcast") return
 
+    // =====================
+    // FILTER PESAN LAMA
+    // Skip pesan yang dikirim sebelum bot aktif
+    // =====================
+    const msgTimestamp = msg.messageTimestamp
+        ? Number(msg.messageTimestamp)
+        : 0
+
+    if (msgTimestamp && msgTimestamp < BOT_START_TIME) return
+
     const prefix = global.settings.prefix
     const isFromMe = msg.key?.fromMe
 
@@ -110,6 +125,55 @@ async function messageHandler(msg) {
     const sender = isGroup
         ? msg.key.participant || ""
         : from
+
+    const type = Object.keys(msg.message || {})[0]
+
+    // =====================
+    // ANTISPAM — hanya di group, hanya pesan bukan command
+    // =====================
+    if (isGroup && !isFromMe && !text.startsWith(prefix)) {
+
+        const spamTypes = [
+            "conversation",
+            "extendedTextMessage",
+            "imageMessage",
+            "videoMessage",
+            "stickerMessage"
+        ]
+
+        if (!global.spam[sender]) {
+            global.spam[sender] = { count: 0, time: Date.now() }
+        }
+
+        const now = Date.now()
+
+        if (now - global.spam[sender].time > 5000) {
+            global.spam[sender] = { count: 0, time: now }
+        }
+
+        if (spamTypes.includes(type)) {
+            global.spam[sender].count++
+            global.spam[sender].time = now
+        }
+
+        if (global.spam[sender].count >= 5) {
+            global.spam[sender].count = 0
+
+            let db = global.readJSON("./warn.json")
+
+            if (!db[from]) db[from] = {}
+            if (!db[from][sender]) db[from][sender] = 0
+
+            db[from][sender]++
+
+            await global.writeJSON("./warn.json", db)
+
+            await sock.sendMessage(from, {
+                text: `⚠️ @${sender.split("@")[0]} jangan spam`,
+                mentions: [sender]
+            })
+        }
+    }
 
     if (!text.startsWith(prefix)) return
 
